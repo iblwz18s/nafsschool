@@ -1,1 +1,10 @@
 project_id = "vxqmtejmtykkdvcxirec"
+
+[functions.authenticate-parent]
+verify_jwt = false
+
+[functions.submit-progress]
+verify_jwt = false
+
+[functions.get-students-by-grade]
+verify_jwt = false
