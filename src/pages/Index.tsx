@@ -59,16 +59,26 @@ const Index = () => {
     if (selectedSubject && hasClassData && selectedGrade) {
       const fetchStudents = async () => {
         const gradeNumber = normalizeGrade(selectedGrade);
-        const { data, error } = await supabase
-          .from("students")
-          .select("student_name, grade")
-          .order("student_name");
-        
-        if (!error && data) {
-          const filteredStudents = data
-            .filter(s => normalizeGrade(s.grade) === gradeNumber)
-            .map(s => s.student_name);
-          setClassStudents(filteredStudents);
+        try {
+          // Use edge function to get students for teachers (secure approach)
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-students-by-grade?grade=${encodeURIComponent(selectedGrade)}`,
+            {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              },
+            }
+          );
+
+          const result = await response.json();
+
+          if (result.success && result.students) {
+            setClassStudents(result.students.map((s: { student_name: string }) => s.student_name));
+          }
+        } catch (error) {
+          console.error("Error fetching students:", error);
         }
       };
       fetchStudents();
@@ -226,7 +236,11 @@ const Index = () => {
             grade={selectedGrade}
             gradeName={currentGrade?.name || ""}
             onBack={() => setUserType(null)}
-            onSuccess={(student) => setSelectedStudent(student)}
+            onSuccess={(studentName, studentId) => {
+              setSelectedStudent(studentName);
+              sessionStorage.setItem('selectedStudent', studentName);
+              sessionStorage.setItem('selectedStudentId', studentId);
+            }}
           />
         )}
 
