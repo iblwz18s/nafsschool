@@ -9,39 +9,60 @@ import {
 } from "@/components/ui/input-otp";
 import { supabase } from "@/integrations/supabase/client";
 
-interface Student {
+interface StudentPublic {
   id: string;
   student_name: string;
-  pin_code: string;
 }
 
 interface ParentLoginProps {
   grade: string;
   gradeName: string;
   onBack: () => void;
-  onSuccess: (studentName: string) => void;
+  onSuccess: (studentName: string, studentId: string) => void;
 }
 
 const ParentLogin = ({ grade, gradeName, onBack, onSuccess }: ParentLoginProps) => {
-  const [students, setStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState<StudentPublic[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<StudentPublic | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   useEffect(() => {
     const fetchStudents = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("students")
-        .select("id, student_name, pin_code")
-        .eq("grade", grade)
-        .order("student_name");
+      try {
+        // Use secure edge function to get students without exposing PIN codes
+        const { data, error } = await supabase.functions.invoke('get-students-by-grade', {
+          body: null,
+          method: 'GET',
+          headers: {},
+        });
 
-      if (error) {
-        console.error("Error fetching students:", error);
-      } else {
-        setStudents(data || []);
+        // Fallback to query params approach
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-students-by-grade?grade=${encodeURIComponent(grade)}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+          }
+        );
+
+        const result = await response.json();
+
+        if (result.success && result.students) {
+          setStudents(result.students);
+        } else {
+          console.error("Error fetching students:", result.error);
+          setStudents([]);
+        }
+      } catch (err) {
+        console.error("Error fetching students:", err);
+        setStudents([]);
       }
       setLoading(false);
     };
@@ -49,15 +70,49 @@ const ParentLogin = ({ grade, gradeName, onBack, onSuccess }: ParentLoginProps) 
     fetchStudents();
   }, [grade]);
 
-  const handlePinComplete = (value: string) => {
+  const handlePinComplete = async (value: string) => {
     setPin(value);
     if (value.length === 4 && selectedStudent) {
-      if (value === selectedStudent.pin_code) {
-        setError("");
-        onSuccess(selectedStudent.student_name);
-      } else {
-        setError("الرمز غير صحيح - أدخل آخر 4 أرقام من جوال ولي الأمر");
+      setIsAuthenticating(true);
+      setError("");
+
+      try {
+        // Use secure edge function for PIN verification
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/authenticate-parent`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            },
+            body: JSON.stringify({
+              student_id: selectedStudent.id,
+              pin_code: value,
+            }),
+          }
+        );
+
+        const result = await response.json();
+
+        if (result.success) {
+          setError("");
+          // Store session token securely
+          if (result.session_token) {
+            sessionStorage.setItem('parent_session_token', result.session_token);
+            sessionStorage.setItem('authenticated_student_id', result.student_id);
+          }
+          onSuccess(result.student_name, result.student_id);
+        } else {
+          setError(result.error || "الرمز غير صحيح");
+          setPin("");
+        }
+      } catch (err) {
+        console.error("Authentication error:", err);
+        setError("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
         setPin("");
+      } finally {
+        setIsAuthenticating(false);
       }
     }
   };
@@ -149,6 +204,7 @@ const ParentLogin = ({ grade, gradeName, onBack, onSuccess }: ParentLoginProps) 
                 maxLength={4}
                 value={pin}
                 onChange={handlePinComplete}
+                disabled={isAuthenticating}
               >
                 <InputOTPGroup>
                   <InputOTPSlot index={0} />
@@ -158,6 +214,13 @@ const ParentLogin = ({ grade, gradeName, onBack, onSuccess }: ParentLoginProps) 
                 </InputOTPGroup>
               </InputOTP>
             </div>
+
+            {isAuthenticating && (
+              <div className="flex items-center gap-2 mt-4 text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>جاري التحقق...</span>
+              </div>
+            )}
 
             {error && (
               <p className="text-destructive mt-4 text-sm">{error}</p>
