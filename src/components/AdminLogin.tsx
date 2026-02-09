@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, LogIn, UserPlus } from "lucide-react";
+import { Loader2, LogIn, UserPlus, KeyRound } from "lucide-react";
 
 interface AdminLoginProps {
   onLoginSuccess: () => void;
@@ -16,6 +16,7 @@ const AdminLogin = ({ onLoginSuccess }: AdminLoginProps) => {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isResetPassword, setIsResetPassword] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,15 +87,50 @@ const AdminLogin = ({ onLoginSuccess }: AdminLoginProps) => {
     }
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/training-gallery?reset=true`,
+      });
+
+      if (error) {
+        toast.error("خطأ في إرسال رابط إعادة التعيين: " + error.message);
+        return;
+      }
+
+      toast.success("تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني");
+      setIsResetPassword(false);
+    } catch (error) {
+      toast.error("حدث خطأ غير متوقع");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getTitle = () => {
+    if (isResetPassword) return "إعادة تعيين كلمة المرور";
+    if (isSignUp) return "إنشاء حساب مسؤول";
+    return "دخول المسؤول";
+  };
+
+  const getSubmitHandler = () => {
+    if (isResetPassword) return handleResetPassword;
+    if (isSignUp) return handleSignUp;
+    return handleLogin;
+  };
+
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
         <CardTitle className="text-center text-xl">
-          {isSignUp ? "إنشاء حساب مسؤول" : "دخول المسؤول"}
+          {getTitle()}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-4">
+        <form onSubmit={getSubmitHandler()} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">البريد الإلكتروني</Label>
             <Input
@@ -107,36 +143,52 @@ const AdminLogin = ({ onLoginSuccess }: AdminLoginProps) => {
               dir="ltr"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">كلمة المرور</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              dir="ltr"
-            />
-          </div>
+          {!isResetPassword && (
+            <div className="space-y-2">
+              <Label htmlFor="password">كلمة المرور</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                dir="ltr"
+              />
+            </div>
+          )}
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin ml-2" />
+            ) : isResetPassword ? (
+              <KeyRound className="w-4 h-4 ml-2" />
             ) : isSignUp ? (
               <UserPlus className="w-4 h-4 ml-2" />
             ) : (
               <LogIn className="w-4 h-4 ml-2" />
             )}
-            {isSignUp ? "إنشاء الحساب" : "تسجيل الدخول"}
+            {isResetPassword ? "إرسال رابط التعيين" : isSignUp ? "إنشاء الحساب" : "تسجيل الدخول"}
           </Button>
         </form>
-        <div className="mt-4 text-center">
+        <div className="mt-4 text-center space-y-2">
+          {!isResetPassword && (
+            <Button
+              variant="link"
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="text-muted-foreground"
+            >
+              {isSignUp ? "لديك حساب؟ تسجيل الدخول" : "ليس لديك حساب؟ إنشاء حساب جديد"}
+            </Button>
+          )}
           <Button
             variant="link"
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-muted-foreground"
+            onClick={() => {
+              setIsResetPassword(!isResetPassword);
+              setIsSignUp(false);
+            }}
+            className="text-muted-foreground block w-full"
           >
-            {isSignUp ? "لديك حساب؟ تسجيل الدخول" : "ليس لديك حساب؟ إنشاء حساب جديد"}
+            {isResetPassword ? "العودة لتسجيل الدخول" : "نسيت كلمة المرور؟"}
           </Button>
         </div>
       </CardContent>
