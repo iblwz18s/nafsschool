@@ -1,23 +1,36 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Shield } from "lucide-react";
 import TrainingGallery from "@/components/TrainingGallery";
 import AdminLogin from "@/components/AdminLogin";
 import AdminPanel from "@/components/AdminPanel";
+import UpdatePassword from "@/components/UpdatePassword";
 import { supabase } from "@/integrations/supabase/client";
 
 const TrainingGalleryPage = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showUpdatePassword, setShowUpdatePassword] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     const checkAdminStatus = async () => {
+      // Check if this is a password reset flow
+      const isReset = searchParams.get("reset") === "true";
+      
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
+        // If reset=true and user is authenticated, show password update form
+        if (isReset) {
+          setShowUpdatePassword(true);
+          setIsCheckingAuth(false);
+          return;
+        }
+
         const { data: roleData } = await supabase
           .from("user_roles")
           .select("role")
@@ -38,11 +51,17 @@ const TrainingGalleryPage = () => {
       if (event === 'SIGNED_OUT') {
         setIsAdmin(false);
         setShowAdminLogin(false);
+        setShowUpdatePassword(false);
+      }
+      
+      // Handle password recovery event
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowUpdatePassword(true);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [searchParams]);
 
   const handleLoginSuccess = () => {
     setIsAdmin(true);
@@ -52,6 +71,33 @@ const TrainingGalleryPage = () => {
   const handleLogout = () => {
     setIsAdmin(false);
     setShowAdminLogin(false);
+  };
+
+  const handlePasswordUpdateSuccess = async () => {
+    setShowUpdatePassword(false);
+    // Clear the reset parameter from URL
+    setSearchParams({});
+    
+    // Check if user is admin and show admin panel
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      
+      if (roleData) {
+        setIsAdmin(true);
+      }
+    }
+  };
+
+  const handlePasswordUpdateCancel = async () => {
+    setShowUpdatePassword(false);
+    setSearchParams({});
+    await supabase.auth.signOut();
   };
 
   if (isCheckingAuth) {
@@ -80,7 +126,14 @@ const TrainingGalleryPage = () => {
           </Button>
         </div>
 
-        {isAdmin ? (
+        {showUpdatePassword ? (
+          <div className="container mx-auto px-4 pb-8">
+            <UpdatePassword 
+              onSuccess={handlePasswordUpdateSuccess}
+              onCancel={handlePasswordUpdateCancel}
+            />
+          </div>
+        ) : isAdmin ? (
           <div className="container mx-auto px-4 pb-8">
             <AdminPanel onLogout={handleLogout} />
           </div>
